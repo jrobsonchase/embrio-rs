@@ -48,14 +48,14 @@ fn smoke_sink() {
         let mut sum = 0;
         {
             let sum = &mut sum;
+            let slow = async move |i| i;
             let stream = ::embrio_async::async_stream_block! {
-                yield ::embrio_async::await!(async { 5 });
-                yield ::embrio_async::await!(async { 6 });
+                yield ::embrio_async::await!(async { slow(5) });
+                yield ::embrio_async::await!(async { slow(6) });
             };
             let sink = ::embrio_async::async_sink_block! {
                 loop {
-                    let foo = ::embrio_async::await_input!();
-                    *sum += foo;
+                    *sum += ::embrio_async::await!(::embrio_async::await_input!());
                 }
             };
             ::pin_utils::pin_mut!(sink);

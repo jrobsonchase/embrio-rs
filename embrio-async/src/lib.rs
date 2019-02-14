@@ -317,7 +317,6 @@ impl UnsafeWakeRef {
 
 unsafe impl Send for UnsafeWakeRef {}
 
-#[derive(Copy, Clone)]
 pub struct UnsafeItemRef<T> {
     item: *mut Option<T>,
     checked: *mut bool,
@@ -331,6 +330,15 @@ impl<T> UnsafeItemRef<T> {
 }
 
 unsafe impl<T> Send for UnsafeItemRef<T> {}
+
+impl<T> Clone for UnsafeItemRef<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for UnsafeItemRef<T> {
+}
 
 pub unsafe fn make_future<F, G>(f: F) -> impl Future<Output = G::Return>
 where
