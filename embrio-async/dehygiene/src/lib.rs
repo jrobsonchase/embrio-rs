@@ -126,7 +126,7 @@ pub fn async_sink_block(
         // probably described in the embrio-async safety notes.
         unsafe {
             ::embrio_async::make_sink(|#lw_arg, #item_arg| {
-                static || {
+                static move || {
                     let #lw_arg = #lw_arg;
                     let #item_arg = #item_arg;
                     if false { yield ::core::option::Option::None }
