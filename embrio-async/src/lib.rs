@@ -23,8 +23,11 @@ use core::{
     task::{LocalWaker, Poll},
 };
 use futures_core::stream::Stream;
+use futures_sink::Sink;
 
-pub use embrio_async_dehygiene::{async_block, async_stream_block, await};
+pub use embrio_async_dehygiene::{async_block, async_stream_block, async_sink_block, await, await_input};
+
+pub use pin_utils::pin_mut;
 
 enum FutureImplState<F, G> {
     NotStarted(F),
@@ -119,6 +122,173 @@ where
     }
 }
 
+enum SinkImplState<F, G> {
+    NotStarted(F),
+    Started(G),
+    Complete,
+    Invalid,
+}
+
+struct SinkImpl<T, F, G> {
+    local_waker: *const LocalWaker,
+    item: Option<T>,
+    checked: bool,
+    state: SinkImplState<F, G>,
+    _pinned: PhantomPinned,
+}
+
+impl<T, F, G> SinkImpl<T, F, G> {
+    unsafe fn wake_ref(&self) -> UnsafeWakeRef {
+        UnsafeWakeRef(&self.local_waker as *const _)
+    }
+
+    unsafe fn item_ref(&mut self) -> UnsafeItemRef<T> {
+        UnsafeItemRef {
+            item: &mut self.item as *mut _,
+            checked: &mut self.checked as *mut _,
+        }
+    }
+}
+
+/// This `Sink` is complete and no longer accepting items
+#[derive(Debug, PartialEq, Eq)]
+pub struct Complete;
+
+impl<T, F, G> Sink for SinkImpl<T, F, G>
+where
+    F: FnOnce(UnsafeWakeRef, UnsafeItemRef<T>) -> G,
+    G: Generator<Yield = Option<!>, Return = ()>,
+{
+    type SinkItem = T;
+    type SinkError = Complete;
+
+    fn poll_ready(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<(), Self::SinkError>>
+    {
+        // Safety: See `impl Future for FutureImpl`
+        let this = unsafe { Pin::get_unchecked_mut(self) };
+        if let SinkImplState::Started(g) = &mut this.state {
+            unsafe {
+                this.local_waker = lw as *const _;
+                this.item = None;
+                this.checked = false;
+                match Pin::new_unchecked(g).resume() {
+                    GeneratorState::Yielded(None) => {
+                        if ptr::read(&mut this.checked) {
+                            Poll::Ready(Ok(()))
+                        } else {
+                            Poll::Pending
+                        }
+                    }
+                    GeneratorState::Complete(()) => {
+                        this.state = SinkImplState::Complete;
+                        Poll::Ready(Err(Complete))
+                    }
+                }
+            }
+        } else if let SinkImplState::NotStarted(f) =
+            mem::replace(&mut this.state, SinkImplState::Invalid)
+        {
+            unsafe {
+                this.state = SinkImplState::Started(f(this.wake_ref(), this.item_ref()));
+                Pin::new_unchecked(this).poll_ready(lw)
+            }
+        } else if let SinkImplState::Complete = this.state {
+            Poll::Ready(Err(Complete))
+        } else {
+            panic!("reached invalid state")
+        }
+    }
+
+    fn start_send(self: Pin<&mut Self>, item: Self::SinkItem) -> Result<(), Self::SinkError>
+    {
+        // Safety: See `impl Future for FutureImpl`
+        let this = unsafe { Pin::get_unchecked_mut(self) };
+        if let SinkImplState::Started(g) = &mut this.state {
+            unsafe {
+                this.local_waker = ptr::null();
+                this.item = Some(item);
+                this.checked = false;
+                match Pin::new_unchecked(g).resume() {
+                    GeneratorState::Yielded(None) => {
+                        if ptr::read(&mut this.checked) {
+                            assert!(this.item.is_none());
+                            Ok(())
+                        } else {
+                            panic!("start_send when sink is not ready")
+                        }
+                    }
+                    GeneratorState::Complete(()) => {
+                        this.state = SinkImplState::Complete;
+                        Err(Complete)
+                    }
+                }
+            }
+        } else if let SinkImplState::NotStarted(f) =
+            mem::replace(&mut this.state, SinkImplState::Invalid)
+        {
+            unsafe {
+                this.state = SinkImplState::Started(f(this.wake_ref(), this.item_ref()));
+                Pin::new_unchecked(this).start_send(item)
+            }
+        } else if let SinkImplState::Complete = this.state {
+            Err(Complete)
+        } else {
+            panic!("reached invalid state")
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<(), Self::SinkError>>
+    {
+        // Safety: See `impl Future for FutureImpl`
+        let this = unsafe { Pin::get_unchecked_mut(self) };
+        if let SinkImplState::Started(g) = &mut this.state {
+            unsafe {
+                this.local_waker = ptr::null();
+                this.item = None;
+                this.checked = false;
+                match Pin::new_unchecked(g).resume() {
+                    GeneratorState::Yielded(None) => {
+                        if ptr::read(&mut this.checked) {
+                            Poll::Ready(Ok(()))
+                        } else {
+                            Poll::Pending
+                        }
+                    }
+                    GeneratorState::Complete(()) => {
+                        this.state = SinkImplState::Complete;
+                        Poll::Ready(Ok(()))
+                    }
+                }
+            }
+        } else if let SinkImplState::NotStarted(f) =
+            mem::replace(&mut this.state, SinkImplState::Invalid)
+        {
+            unsafe {
+                this.state = SinkImplState::Started(f(this.wake_ref(), this.item_ref()));
+                Pin::new_unchecked(this).poll_flush(lw)
+            }
+        } else if let SinkImplState::Complete = this.state {
+            Poll::Ready(Err(Complete))
+        } else {
+            panic!("reached invalid state")
+        }
+    }
+
+    fn poll_close(mut self: Pin<&mut Self>, lw: &LocalWaker) -> Poll<Result<(), Self::SinkError>>
+    {
+        match self.as_mut().poll_flush(lw) {
+            Poll::Ready(Ok(())) => {
+                let mut this = unsafe { Pin::get_unchecked_mut(self) };
+                this.state = SinkImplState::Complete;
+                Poll::Ready(Ok(()))
+            }
+            other => {
+                other
+            }
+        }
+    }
+}
+
 /// `Send`-able wrapper around a `*const *const LocalWaker`
 ///
 /// This exists to allow the generator inside a `FutureImpl` to be `Send`,
@@ -135,9 +305,32 @@ impl UnsafeWakeRef {
     pub unsafe fn get_waker(&self) -> &LocalWaker {
         &**self.0
     }
+
+    pub unsafe fn try_get_waker(&self) -> Option<&LocalWaker> {
+        if *self.0 == ptr::null() {
+            None
+        } else {
+            Some(&**self.0)
+        }
+    }
 }
 
 unsafe impl Send for UnsafeWakeRef {}
+
+#[derive(Copy, Clone)]
+pub struct UnsafeItemRef<T> {
+    item: *mut Option<T>,
+    checked: *mut bool,
+}
+
+impl<T> UnsafeItemRef<T> {
+    pub unsafe fn get_item(self) -> Option<T> {
+        ptr::write(self.checked, true);
+        ptr::replace(self.item, None)
+    }
+}
+
+unsafe impl<T> Send for UnsafeItemRef<T> {}
 
 pub unsafe fn make_future<F, G>(f: F) -> impl Future<Output = G::Return>
 where
@@ -159,6 +352,20 @@ where
     FutureImpl {
         local_waker: ptr::null(),
         state: FutureImplState::NotStarted(f),
+        _pinned: PhantomPinned,
+    }
+}
+
+pub unsafe fn make_sink<T, F, G>(f: F) -> impl Sink<SinkItem = T, SinkError = Complete>
+where
+    F: FnOnce(UnsafeWakeRef, UnsafeItemRef<T>) -> G,
+    G: Generator<Yield = Option<!>, Return = ()>,
+{
+    SinkImpl {
+        local_waker: ptr::null(),
+        item: None,
+        checked: false,
+        state: SinkImplState::NotStarted(f),
         _pinned: PhantomPinned,
     }
 }
