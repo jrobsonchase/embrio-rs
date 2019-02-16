@@ -18,7 +18,7 @@ impl Write for Void {
 
     fn poll_write(
         self: Pin<&mut Self>,
-        _lw: &task::LocalWaker,
+        _waker: &task::Waker,
         buf: &[u8],
     ) -> Poll<Result<usize, Self::Error>> {
         Poll::Ready(Ok(buf.len()))
@@ -26,14 +26,14 @@ impl Write for Void {
 
     fn poll_flush(
         self: Pin<&mut Self>,
-        _lw: &task::LocalWaker,
+        _waker: &task::Waker,
     ) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_close(
         self: Pin<&mut Self>,
-        _lw: &task::LocalWaker,
+        _waker: &task::Waker,
     ) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }

@@ -39,7 +39,7 @@ where
 
     fn poll_write(
         mut self: Pin<&mut Self>,
-        _lw: &task::LocalWaker,
+        _waker: &task::Waker,
         buf: &[u8],
     ) -> Poll<Result<usize, Self::Error>> {
         let len = {
@@ -55,14 +55,14 @@ where
 
     fn poll_flush(
         self: Pin<&mut Self>,
-        _lw: &task::LocalWaker,
+        _waker: &task::Waker,
     ) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }
 
     fn poll_close(
         self: Pin<&mut Self>,
-        _lw: &task::LocalWaker,
+        _waker: &task::Waker,
     ) -> Poll<Result<(), Self::Error>> {
         Poll::Ready(Ok(()))
     }

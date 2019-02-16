@@ -7,7 +7,7 @@ use super::Read;
 pub trait BufRead: Read {
     fn poll_fill_buf<'a>(
         self: Pin<&'a mut Self>,
-        lw: &task::LocalWaker,
+        waker: &task::Waker,
     ) -> Poll<Result<&'a [u8], Self::Error>>;
 
     fn consume(self: Pin<&mut Self>, amount: usize);

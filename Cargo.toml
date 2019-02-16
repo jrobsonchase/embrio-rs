@@ -14,3 +14,8 @@ members = [
 ]
 
 default-members = ["embrio"]
+
+[patch.crates-io]
+futures-preview = { git = "https://github.com/Nemo157/futures-rs", branch = "waker_changes_no_std" }
+futures-util-preview = { git = "https://github.com/Nemo157/futures-rs", branch = "waker_changes_no_std" }
+futures-core-preview = { git = "https://github.com/Nemo157/futures-rs", branch = "waker_changes_no_std" }
