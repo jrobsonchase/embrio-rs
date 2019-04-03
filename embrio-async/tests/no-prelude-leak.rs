@@ -1,13 +1,5 @@
 #![no_implicit_prelude]
-#![feature(
-    arbitrary_self_types,
-    async_await,
-    await_macro,
-    futures_api,
-    generator_trait,
-    generators,
-    proc_macro_hygiene
-)]
+#![feature(arbitrary_self_types, async_await, await_macro, generators)]
 
 // This is using no_implicit_prelude to test that the macros don't accidentally
 // refer directly to any paths from core's implicitly injected prelude and
@@ -17,7 +9,7 @@
 fn smoke() {
     let future = async {
         ::std::await!(::embrio_async::async_block! {
-            ::embrio_async::await!(async { 5 })
+            ewait!(async { 5 })
         })
     };
     {
@@ -30,8 +22,8 @@ fn smoke() {
 fn smoke_stream() {
     let future = async {
         let stream = ::embrio_async::async_stream_block! {
-            yield ::embrio_async::await!(async { 5 });
-            yield ::embrio_async::await!(async { 6 });
+            yield ewait!(async { 5 });
+            yield ewait!(async { 6 });
         };
         ::pin_utils::pin_mut!(stream);
         let mut sum = 0;

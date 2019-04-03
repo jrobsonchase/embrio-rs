@@ -1,5 +1,5 @@
 #![no_std]
-#![feature(async_await, generators, proc_macro_hygiene)]
+#![feature(generators)]
 
 use core::{
     future::Future,
@@ -10,7 +10,7 @@ use pin_utils::pin_mut;
 
 use futures::task::noop_waker;
 
-use embrio_async::{async_block, async_fn, await};
+use embrio_async::{async_block, async_fn};
 
 fn block_on<F>(f: F) -> <F as Future>::Output
 where
@@ -35,7 +35,7 @@ fn test_async_block() {
     };
 
     let f2 = async_block! {
-        await!(f)
+        ewait!(f)
     };
 
     assert_eq!(block_on(f2), 5);
@@ -61,7 +61,7 @@ fn a_number_and_string<'a, 'b>(
 
 #[async_fn]
 fn a_wait_thing() -> Either<usize, &'static str> {
-    await!(a_number_and_string(&5, "Hello, world!"))
+    ewait!(a_number_and_string(&5, "Hello, world!"))
 }
 
 #[test]

@@ -1,9 +1,7 @@
 #![no_std]
 #![feature(
     arbitrary_self_types,
-    async_await,
     exhaustive_patterns,
-    futures_api,
     generator_trait,
     generators,
     never_type
@@ -24,9 +22,15 @@ use core::{
 };
 use futures_core::stream::Stream;
 
-pub use embrio_async_dehygiene::{
-    async_block, async_fn, async_stream_block, await,
-};
+use proc_macro_hack::proc_macro_hack;
+
+#[proc_macro_hack(support_nested)]
+pub use embrio_async_dehygiene::async_block;
+
+#[proc_macro_hack(support_nested)]
+pub use embrio_async_dehygiene::async_stream_block;
+
+pub use embrio_async_dehygiene::async_fn;
 
 #[doc(hidden)]
 /// Dummy trait for capturing additional lifetime bounds on `impl Trait`s
